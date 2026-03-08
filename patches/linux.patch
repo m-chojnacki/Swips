@@ -1,0 +1,510 @@
+diff --git a/arch/mips/Kbuild b/arch/mips/Kbuild
+index d5d6ef9bb..5f6df8290 100644
+--- a/arch/mips/Kbuild
++++ b/arch/mips/Kbuild
+@@ -9,6 +9,7 @@ endif
+ # platform specific definitions
+ include arch/mips/Kbuild.platforms
+ obj-y := $(platform-y)
++obj-y += swips/
+ 
+ # make clean traverses $(obj-) without having included .config, so
+ # everything ends up here
+diff --git a/arch/mips/Kconfig b/arch/mips/Kconfig
+index ed51970c0..6e0fc3750 100644
+--- a/arch/mips/Kconfig
++++ b/arch/mips/Kconfig
+@@ -429,6 +429,25 @@ config MACH_INGENIC_SOC
+ 	select MACH_INGENIC
+ 	select SYS_SUPPORTS_ZBOOT_UART16550
+ 
++config MACH_SWIPS
++	bool "Swips based machines"
++	select MIPS_GENERIC
++	select SYS_HAS_CPU_R3000
++	select SYS_HAS_CPU_R4X00
++	select SYS_SUPPORTS_32BIT_KERNEL
++	select SYS_SUPPORTS_LITTLE_ENDIAN
++	select SYS_SUPPORTS_ZBOOT
++	select SYS_SUPPORTS_ZBOOT_UART16550
++	select DEBUG_ZBOOT
++	select SYS_HAS_EARLY_PRINTK
++	select USE_GENERIC_EARLY_PRINTK_8250
++	select DMA_NONCOHERENT
++	select CEVT_R4K
++	select CSRC_R4K
++	select COMMON_CLK
++	select IRQ_MIPS_CPU
++	select USE_OF
++
+ config LANTIQ
+ 	bool "Lantiq based platforms"
+ 	select DMA_NONCOHERENT
+@@ -1086,6 +1105,7 @@ source "arch/mips/bmips/Kconfig"
+ source "arch/mips/generic/Kconfig"
+ source "arch/mips/ingenic/Kconfig"
+ source "arch/mips/jazz/Kconfig"
++source "arch/mips/swips/Kconfig"
+ source "arch/mips/lantiq/Kconfig"
+ source "arch/mips/pic32/Kconfig"
+ source "arch/mips/pistachio/Kconfig"
+diff --git a/arch/mips/boot/compressed/uart-16550.c b/arch/mips/boot/compressed/uart-16550.c
+index aee8d7b8f..071d5e5b0 100644
+--- a/arch/mips/boot/compressed/uart-16550.c
++++ b/arch/mips/boot/compressed/uart-16550.c
+@@ -23,6 +23,11 @@
+ #define PORT(offset) (CKSEG1ADDR(INGENIC_UART0_BASE_ADDR) + (4 * offset))
+ #endif
+ 
++#ifdef CONFIG_MACH_SWIPS
++#define UART0_BASE	0x10030000
++#define PORT(offset) (CKSEG1ADDR(UART0_BASE) + (4 * offset))
++#endif
++
+ #ifdef CONFIG_CPU_XLR
+ #define UART0_BASE  0x1EF14000
+ #define PORT(offset) (CKSEG1ADDR(UART0_BASE) + (4 * offset))
+diff --git a/arch/mips/boot/dts/Makefile b/arch/mips/boot/dts/Makefile
+index 60bd7d2a9..0bd439cec 100644
+--- a/arch/mips/boot/dts/Makefile
++++ b/arch/mips/boot/dts/Makefile
+@@ -4,6 +4,7 @@ subdir-$(CONFIG_CAVIUM_OCTEON_SOC)	+= cavium-octeon
+ subdir-$(CONFIG_MACH_PISTACHIO)		+= img
+ subdir-$(CONFIG_FIT_IMAGE_FDT_BOSTON)	+= img
+ subdir-$(CONFIG_MACH_INGENIC)		+= ingenic
++subdir-$(CONFIG_MACH_SWIPS)		+= swips
+ subdir-$(CONFIG_LANTIQ)			+= lantiq
+ subdir-$(CONFIG_MACH_LOONGSON64)	+= loongson
+ subdir-$(CONFIG_SOC_VCOREIII)		+= mscc
+diff --git a/arch/mips/boot/dts/swips/Makefile b/arch/mips/boot/dts/swips/Makefile
+new file mode 100644
+index 000000000..118775b08
+--- /dev/null
++++ b/arch/mips/boot/dts/swips/Makefile
+@@ -0,0 +1,4 @@
++# SPDX-License-Identifier: GPL-2.0
++dtb-$(CONFIG_DT_SWIPS)		+= swips.dtb
++
++obj-$(CONFIG_BUILTIN_DTB)	+= $(addsuffix .o, $(dtb-y))
+diff --git a/arch/mips/boot/dts/swips/swips.dts b/arch/mips/boot/dts/swips/swips.dts
+new file mode 100644
+index 000000000..d1961ba59
+--- /dev/null
++++ b/arch/mips/boot/dts/swips/swips.dts
+@@ -0,0 +1,100 @@
++// SPDX-License-Identifier: GPL-2.0
++/dts-v1/;
++
++/ {
++	#address-cells = <1>;
++	#size-cells = <1>;
++	
++	compatible = "swips,machine";
++	model = "Swips";
++	
++	chosen {
++		#address-cells = <1>;
++		#size-cells = <1>;
++		ranges;
++		
++		stdout-path = &serial0;
++		
++		framebuffer0: framebuffer@1a000000 {
++			compatible = "simple-framebuffer";
++			reg = <0x1a000000 (800 * 600 * 2)>;
++			width = <800>;
++			height = <600>;
++			stride = <(800 * 2)>;
++			format = "r5g6b5";
++		};
++	};
++
++	cpus {
++		#address-cells = <1>;
++		#size-cells = <0>;
++
++		cpu@0 {
++			compatible = "swips,swipscore";
++			device_type = "cpu";
++			reg = <0>;
++			clocks = <&baseclk>;
++		};
++	};
++	
++	baseclk: baseclk {
++		compatible = "fixed-clock";
++		#clock-cells = <0>;
++		clock-frequency = <10000000>;
++	};
++	
++	cpuintc: interrupt-controller {
++		#address-cells = <0>;
++		#interrupt-cells = <1>;
++		interrupt-controller;
++		compatible = "mti,cpu-interrupt-controller";
++	};
++
++	memory@0 {
++		device_type = "memory";
++		reg = <0x0 0x8000000>;
++	};
++
++	serial0: serial@10030000 {
++		compatible = "ns8250";
++		reg = <0x10030000 0x100>;
++		reg-shift = <2>;
++		clocks = <&baseclk>;
++		current-speed = <115200>;
++		interrupt-parent = <&cpuintc>;
++		interrupts = <4>;
++		no-loopback-test;
++	};
++	
++	serial1: serial@10030100 {
++		compatible = "ns8250";
++		reg = <0x10030100 0x100>;
++		reg-shift = <2>;
++		clocks = <&baseclk>;
++		current-speed = <115200>;
++		interrupt-parent = <&cpuintc>;
++		interrupts = <5>;
++		no-loopback-test;
++	};
++	
++	keyboard: ps2@10040000 {
++		compatible = "altr,ps2-1.0";
++		reg = <0x10040000 0x100>;
++		interrupt-parent = <&cpuintc>;
++		interrupts = <3>;
++	};
++	
++	mouse: ps2@10040100 {
++		compatible = "altr,ps2-1.0";
++		reg = <0x10040100 0x100>;
++		interrupt-parent = <&cpuintc>;
++		interrupts = <2>;
++	};
++	
++	swipsdrive: swipsdrive@11000000 {
++		compatible = "swips,drive";
++		reg = <0x11000000 0x01000000>;
++		interrupt-parent = <&cpuintc>;
++		interrupts = <2>;
++	};
++};
+diff --git a/arch/mips/configs/swips_defconfig b/arch/mips/configs/swips_defconfig
+new file mode 100644
+index 000000000..f8443d317
+--- /dev/null
++++ b/arch/mips/configs/swips_defconfig
+@@ -0,0 +1,29 @@
++CONFIG_BLK_DEV_INITRD=y
++CONFIG_BLK_DEV_RAM=y
++CONFIG_MACH_SWIPS=y
++CONFIG_DT_SWIPS=y
++CONFIG_CPU_R3000=y
++CONFIG_MIPS_CMDLINE_DTB_EXTEND=y
++CONFIG_DEVTMPFS=y
++#CONFIG_DEVTMPFS_MOUNT=y
++CONFIG_VT_HW_CONSOLE_BINDING=y
++CONFIG_SERIAL_8250=y
++CONFIG_SERIAL_8250_CONSOLE=y
++CONFIG_SERIAL_OF_PLATFORM=y
++CONFIG_EXT4_FS=y
++CONFIG_DEBUG_KERNEL=y
++# CONFIG_FTRACE is not set
++CONFIG_TMPFS=y
++CONFIG_STACKTRACE=y
++CONFIG_FB=y
++CONFIG_FB_SIMPLE=y
++CONFIG_LOGO=y
++# CONFIG_SUSPEND is not set
++# CONFIG_HID is not set
++# CONFIG_VGA_CONSOLE is not set
++# CONFIG_USB_SUPPORT is not set
++CONFIG_FRAMEBUFFER_CONSOLE=y
++CONFIG_SYSVIPC=y
++CONFIG_SERIO_ALTERA_PS2=y
++CONFIG_INPUT_EVDEV=y
++CONFIG_SWIPSDRIVE=y
+diff --git a/arch/mips/generic/Platform b/arch/mips/generic/Platform
+index b871af16b..6dbf71121 100644
+--- a/arch/mips/generic/Platform
++++ b/arch/mips/generic/Platform
+@@ -10,6 +10,7 @@
+ 
+ # Note: order matters, keep the asm/mach-generic include last.
+ cflags-$(CONFIG_MACH_INGENIC_SOC)	+= -I$(srctree)/arch/mips/include/asm/mach-ingenic
++cflags-$(CONFIG_MACH_SWIPS)    += -I$(srctree)/arch/mips/include/asm/mach-swips
+ cflags-$(CONFIG_MIPS_GENERIC)	+= -I$(srctree)/arch/mips/include/asm/mach-generic
+ 
+ load-$(CONFIG_MIPS_GENERIC)	+= 0xffffffff80100000
+diff --git a/arch/mips/generic/init.c b/arch/mips/generic/init.c
+index 1842cddd8..a9a93aa41 100644
+--- a/arch/mips/generic/init.c
++++ b/arch/mips/generic/init.c
+@@ -26,6 +26,10 @@ static __initconst const void *mach_match_data;
+ 
+ void __init prom_init(void)
+ {
++#ifdef CONFIG_MACH_SWIPS
++	//setup_8250_early_printk_port(CKSEG1ADDR(0x10030000), 2, 10);
++#endif
++
+ 	plat_get_fdt();
+ 	BUG_ON(!fdt);
+ }
+diff --git a/arch/mips/include/asm/cpu-type.h b/arch/mips/include/asm/cpu-type.h
+index 2be5d7b5d..dc9facda0 100644
+--- a/arch/mips/include/asm/cpu-type.h
++++ b/arch/mips/include/asm/cpu-type.h
+@@ -103,6 +103,7 @@ static inline int __pure __get_cpu_type(const int cpu_type)
+ 	case CPU_R3052:
+ 	case CPU_R3081:
+ 	case CPU_R3081E:
++	case CPU_SWIPSCORE:
+ #endif
+ 
+ #ifdef CONFIG_SYS_HAS_CPU_TX39XX
+diff --git a/arch/mips/include/asm/cpu.h b/arch/mips/include/asm/cpu.h
+index 9e6211e6d..ffd3b6291 100644
+--- a/arch/mips/include/asm/cpu.h
++++ b/arch/mips/include/asm/cpu.h
+@@ -235,6 +235,7 @@
+ #define PRID_REV_TX4927			0x0022
+ #define PRID_REV_TX4937			0x0030
+ #define PRID_REV_R4400			0x0040
++#define PRID_REV_SWIPSCORE		0x0040
+ #define PRID_REV_R3000A			0x0030
+ #define PRID_REV_R3000			0x0020
+ #define PRID_REV_R2000A			0x0010
+@@ -297,7 +298,7 @@ enum cpu_type_enum {
+ 	 * R2000 class processors
+ 	 */
+ 	CPU_R2000, CPU_R3000, CPU_R3000A, CPU_R3041, CPU_R3051, CPU_R3052,
+-	CPU_R3081, CPU_R3081E,
++	CPU_R3081, CPU_R3081E, CPU_SWIPSCORE,
+ 
+ 	/*
+ 	 * R4000 class processors
+diff --git a/arch/mips/include/asm/mach-swips/cpu-feature-overrides.h b/arch/mips/include/asm/mach-swips/cpu-feature-overrides.h
+new file mode 100644
+index 000000000..e14142d39
+--- /dev/null
++++ b/arch/mips/include/asm/mach-swips/cpu-feature-overrides.h
+@@ -0,0 +1,7 @@
++/* SPDX-License-Identifier: GPL-2.0 */
++#ifndef __ASM_MACH_SWIPS_CPU_FEATURE_OVERRIDES_H
++#define __ASM_MACH_SWIPS_CPU_FEATURE_OVERRIDES_H
++
++#define cpu_has_counter	1
++
++#endif /* __ASM_MACH_SWIPS_CPU_FEATURE_OVERRIDES_H */
+diff --git a/arch/mips/kernel/cpu-r3k-probe.c b/arch/mips/kernel/cpu-r3k-probe.c
+index af6547719..0910833ff 100644
+--- a/arch/mips/kernel/cpu-r3k-probe.c
++++ b/arch/mips/kernel/cpu-r3k-probe.c
+@@ -108,6 +108,9 @@ void cpu_probe(void)
+ 				c->cputype = CPU_R3000A;
+ 				__cpu_name[cpu] = "R3000A";
+ 			}
++		} if ((c->processor_id & PRID_REV_MASK) == PRID_REV_SWIPSCORE) {
++			c->cputype = CPU_SWIPSCORE;
++			__cpu_name[cpu] = "SwipsCore";
+ 		} else {
+ 			c->cputype = CPU_R3000;
+ 			__cpu_name[cpu] = "R3000";
+diff --git a/arch/mips/kernel/idle.c b/arch/mips/kernel/idle.c
+index 1aca3b4db..905bb1e4d 100644
+--- a/arch/mips/kernel/idle.c
++++ b/arch/mips/kernel/idle.c
+@@ -145,6 +145,7 @@ void __init check_wait(void)
+ 	switch (current_cpu_type()) {
+ 	case CPU_R3081:
+ 	case CPU_R3081E:
++	case CPU_SWIPSCORE:
+ 		cpu_wait = r3081_wait;
+ 		break;
+ 	case CPU_TX3927:
+diff --git a/arch/mips/swips/Kconfig b/arch/mips/swips/Kconfig
+new file mode 100644
+index 000000000..bea0d23b1
+--- /dev/null
++++ b/arch/mips/swips/Kconfig
+@@ -0,0 +1,23 @@
++# SPDX-License-Identifier: GPL-2.0
++if MACH_SWIPS
++
++choice
++	prompt "Built-in device tree"
++	help
++	  Legacy bootloaders do not pass a DTB pointer to the kernel, so
++	  if a "wrapper" is not being used, the kernel will need to include
++	  a device tree that matches the target board.
++
++	  The builtin DTB will only be used if the firmware does not supply
++	  a valid DTB.
++
++config DT_EMPTY
++	bool "Empty"
++
++config DT_SWIPS
++	bool "Swips"
++	select BUILTIN_DTB
++
++endchoice
++
++endif
+diff --git a/arch/mips/swips/Makefile b/arch/mips/swips/Makefile
+new file mode 100644
+index 000000000..31750eff7
+--- /dev/null
++++ b/arch/mips/swips/Makefile
+@@ -0,0 +1,3 @@
++# SPDX-License-Identifier: GPL-2.0-only
++
++obj-$(CONFIG_CPU_HAS_WB)	+= wbflush.o
+diff --git a/arch/mips/swips/wbflush.c b/arch/mips/swips/wbflush.c
+new file mode 100644
+index 000000000..6679c0004
+--- /dev/null
++++ b/arch/mips/swips/wbflush.c
+@@ -0,0 +1,12 @@
++#include <linux/export.h>
++
++#include <asm/wbflush.h>
++#include <asm/barrier.h>
++
++static void wbflush_swips(void)
++{
++	__fast_iob();
++}
++
++void (*__wbflush)(void) = wbflush_swips;
++EXPORT_SYMBOL(__wbflush);
+diff --git a/drivers/block/Kconfig b/drivers/block/Kconfig
+index 63056cfd4..efafa84f8 100644
+--- a/drivers/block/Kconfig
++++ b/drivers/block/Kconfig
+@@ -359,6 +359,9 @@ config SUNVDC
+ 	  Support for virtual disk devices as a client under Sun
+ 	  Logical Domains.
+ 
++config SWIPSDRIVE
++	tristate "SwipsDrive"
++
+ source "drivers/s390/block/Kconfig"
+ 
+ config XEN_BLKDEV_FRONTEND
+diff --git a/drivers/block/Makefile b/drivers/block/Makefile
+index bc68817ef..21ff0b85b 100644
+--- a/drivers/block/Makefile
++++ b/drivers/block/Makefile
+@@ -22,6 +22,7 @@ obj-$(CONFIG_BLK_DEV_RAM)	+= brd.o
+ obj-$(CONFIG_BLK_DEV_LOOP)	+= loop.o
+ obj-$(CONFIG_CDROM_PKTCDVD)	+= pktcdvd.o
+ obj-$(CONFIG_SUNVDC)		+= sunvdc.o
++obj-$(CONFIG_SWIPSDRIVE)		+= swipsdrive.o
+ 
+ obj-$(CONFIG_BLK_DEV_NBD)	+= nbd.o
+ obj-$(CONFIG_BLK_DEV_CRYPTOLOOP) += cryptoloop.o
+diff --git a/drivers/block/swipsdrive.c b/drivers/block/swipsdrive.c
+new file mode 100644
+index 000000000..6d157b210
+--- /dev/null
++++ b/drivers/block/swipsdrive.c
+@@ -0,0 +1,94 @@
++// SPDX-License-Identifier: GPL-2.0-only
++
++#include <linux/module.h>
++#include <linux/blkdev.h>
++#include <linux/platform_device.h>
++#include <linux/of.h>
++
++static bool swipsdrive_do_bvec(struct device *dev, struct bio_vec *bv, u32 pos)
++{
++    pr_info("swipsdrive: %u\n", pos);
++    return true;
++}
++
++static blk_qc_t swipsdrive_submit_bio(struct bio *bio)
++{
++	struct bio_vec bvec;
++	struct bvec_iter iter;
++	struct device *dev = bio->bi_bdev->bd_disk->private_data;
++	u32 pos = bio->bi_iter.bi_sector << SECTOR_SHIFT;
++
++	bio_for_each_segment(bvec, bio, iter) {
++		if (!swipsdrive_do_bvec(dev, &bvec, pos))
++			goto io_error;
++		pos += bvec.bv_len;
++	}
++
++	bio_endio(bio);
++	return BLK_QC_T_NONE;
++io_error:
++	bio_io_error(bio);
++	return BLK_QC_T_NONE;
++}
++
++static const struct block_device_operations swipsdrive_fops = {
++	.owner		= THIS_MODULE,
++	.submit_bio	= swipsdrive_submit_bio,
++};
++
++static int swipsdrive_probe(struct platform_device *pdev)
++{
++	struct gendisk *disk;
++
++	disk = alloc_disk(0);
++	if (!disk)
++		return -ENOMEM;
++
++	disk->queue = blk_alloc_queue(NUMA_NO_NODE);
++	if (!disk->queue)
++		return -ENOMEM;
++
++	disk->first_minor = 0;
++	disk->flags = GENHD_FL_NO_PART_SCAN | GENHD_FL_EXT_DEVT;
++	disk->fops = &swipsdrive_fops;
++	disk->private_data = &pdev->dev;
++	strcpy(disk->disk_name, "swipsdrive");
++
++	set_capacity(disk, 4096 >> SECTOR_SHIFT);
++	// set_disk_ro(disk, 1);
++
++	blk_queue_flag_set(QUEUE_FLAG_NONROT, disk->queue);
++	blk_queue_physical_block_size(disk->queue, 4096);
++	blk_queue_logical_block_size(disk->queue, 4096);
++
++	add_disk(disk);
++	
++	return 0;
++}
++
++static int swipsdrive_remove(struct platform_device *pdev)
++{
++	return 0;
++}
++
++#ifdef CONFIG_OF
++static const struct of_device_id swipsdrive_match[] = {
++	{ .compatible = "swips,drive", },
++	{},
++};
++MODULE_DEVICE_TABLE(of, swipsdrive_match);
++#endif /* CONFIG_OF */
++
++static struct platform_driver swipsdrive_driver = {
++	.probe		= swipsdrive_probe,
++	.remove		= swipsdrive_remove,
++	.driver	= {
++		.name	= "swipsdrive",
++		.of_match_table = of_match_ptr(swipsdrive_match),
++	},
++};
++module_platform_driver(swipsdrive_driver);
++
++MODULE_AUTHOR("Marcin Chojnacki <marcinch7@gmail.com>");
++MODULE_DESCRIPTION("Driver for the SwipsDrive");
++MODULE_LICENSE("GPL");
