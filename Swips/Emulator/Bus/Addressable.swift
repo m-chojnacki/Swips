@@ -29,13 +29,13 @@ protocol Addressable: AnyObject {
 protocol ThrowingAddressable: AnyObject {
     var size: Word { get }
 
-    func readByte(from address: Word) throws -> Byte
-    func readHalfword(from address: Word) throws -> Halfword
-    func readWord(from address: Word) throws -> Word
+    func readByte(from address: Word) throws(MIPSException) -> Byte
+    func readHalfword(from address: Word) throws(MIPSException) -> Halfword
+    func readWord(from address: Word) throws(MIPSException) -> Word
 
-    func writeByte(to address: Word, _ value: Byte) throws
-    func writeHalfword(to address: Word, _ value: Halfword) throws
-    func writeWord(to address: Word, _ value: Word) throws
+    func writeByte(to address: Word, _ value: Byte) throws(MIPSException)
+    func writeHalfword(to address: Word, _ value: Halfword) throws(MIPSException)
+    func writeWord(to address: Word, _ value: Word) throws(MIPSException)
 }
 
 extension ThrowingAddressable {

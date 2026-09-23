@@ -24,6 +24,7 @@ There is no JIT, no binary translation, and no dependency on any emulation frame
 - Custom minimal MIPS I/II core loosely based on R3000A
 - Full 32-bit integer instruction set: arithmetic, logic, shifts, multiply/divide, loads/stores, branches, traps
 - Branch delay slots, likely branches
+- `LL`/`SC` (MIPS II) executed natively - otherwise the kernel traps and emulates every userland atomic operation
 - `SYSCALL`, `BREAK`, `SYNC`
 
 ### Coprocessor 0 (System Control)
@@ -63,7 +64,22 @@ There is no JIT, no binary translation, and no dependency on any emulation frame
 
 ## Performance
 
-On M1 Pro, Swips sustains around **~160 million instructions per second**, fully interpreted - no JIT, no tricks. That's fast enough to get you to a Linux desktop in a reasonable amount of time.
+On M1 Pro, Swips sustains around **~250 million instructions per second** in the kernel and **~200** under a busy userland, fully interpreted - no JIT, no tricks. It boots from power-on to the LightDM login screen in about **31 seconds**.
+
+### Profiling mode
+
+The app binary doubles as a headless benchmark. Build the **Release** configuration (Debug is ~40× slower) and run:
+
+```sh
+xcodebuild -project Swips.xcodeproj -scheme Swips -configuration Release -destination 'platform=macOS' -derivedDataPath build
+build/Build/Products/Release/Swips.app/Contents/MacOS/Swips --profile --json run.json --screenshot screen.png
+```
+
+It boots the kernel, prints throughput every second, types `exec /sbin/init` once the boot shell goes idle (hand-off to systemd), and reports milestones: first userland entry, shell prompt, every 25K guest syscalls, and the login greeter appearing on the framebuffer. The exit status is 0 only if the guest reached userland without a kernel panic.
+
+- The disk image is opened read-only with an in-memory copy-on-write overlay, so profiling never modifies `debian.img` and every run starts from the same disk state.
+- Runs are deterministic: CPU state is fingerprinted every 2^27 steps. `--baseline previous.json` compares speed on common milestones and verifies the fingerprints are bit-identical - a cheap regression test for emulator changes that should not alter guest behaviour.
+- `--duration`, `--instructions`, `--type`, `--no-type`, `--frames <dir>` (a PNG every 5 s) and `--dump-ram` are also available; run with `--profile --help` for the list.
 
 ## Shortcomings
 

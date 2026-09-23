@@ -9,7 +9,7 @@
 //
 
 /// Memory-mapped framebuffer device (RGB565, 800×600 by default).
-final class Framebuffer: ByteOnlyAddressable {
+final class Framebuffer: Addressable {
     enum PixelFormat {
         case rgb565 // 2 bytes per pixel
 
@@ -25,29 +25,50 @@ final class Framebuffer: ByteOnlyAddressable {
     let format: PixelFormat
 
     private(set) var buffer: UnsafeMutablePointer<Byte>
+    private let raw: UnsafeMutableRawPointer
 
-    /// Called on every byte write; the UI layer uses this to mark the framebuffer dirty.
-    var onWrite: ((Word, Byte) -> Void)?
+    /// Set on every write. The UI clears it before copying the pixels, so a write racing with the copy
+    /// just marks the next frame dirty.
+    var isDirty = true
 
     init(width: Word = 800, height: Word = 600, format: PixelFormat = .rgb565) {
         self.width = width
         self.height = height
         self.format = format
-        buffer = UnsafeMutablePointer<Byte>.allocate(
-            capacity: Int(width &* height &* format.bytesPerPixel),
-        )
+        buffer = .zeroed(count: Int(width &* height &* format.bytesPerPixel))
+        raw = UnsafeMutableRawPointer(buffer)
     }
 
     var size: Word {
         width &* height &* format.bytesPerPixel
     }
 
+    // Wider accesses are little-endian and may be unaligned, exactly like composing them from bytes.
+
     func readByte(from address: Word) -> Byte {
         buffer[Int(address)]
     }
 
+    func readHalfword(from address: Word) -> Halfword {
+        Halfword(littleEndian: raw.loadUnaligned(fromByteOffset: Int(address), as: Halfword.self))
+    }
+
+    func readWord(from address: Word) -> Word {
+        Word(littleEndian: raw.loadUnaligned(fromByteOffset: Int(address), as: Word.self))
+    }
+
     func writeByte(to address: Word, _ value: Byte) {
         buffer[Int(address)] = value
-        onWrite?(address, value)
+        isDirty = true
+    }
+
+    func writeHalfword(to address: Word, _ value: Halfword) {
+        raw.storeBytes(of: value.littleEndian, toByteOffset: Int(address), as: Halfword.self)
+        isDirty = true
+    }
+
+    func writeWord(to address: Word, _ value: Word) {
+        raw.storeBytes(of: value.littleEndian, toByteOffset: Int(address), as: Word.self)
+        isDirty = true
     }
 }

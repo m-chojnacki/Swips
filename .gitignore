@@ -3,3 +3,6 @@ xcuserdata/
 
 ## Runtime
 runtime/*.img
+
+## Build output
+build/

@@ -12,13 +12,15 @@
 final class RAM: Addressable {
     let size: Word
 
+    let base: UnsafeMutableRawPointer
     private let bytes: UnsafeMutablePointer<Byte>
     private let halfwords: UnsafeMutablePointer<Halfword>
     private let words: UnsafeMutablePointer<Word>
 
     init(size: Word) {
         self.size = size
-        bytes = UnsafeMutablePointer<Byte>.allocate(capacity: Int(size))
+        bytes = .zeroed(count: Int(size))
+        base = UnsafeMutableRawPointer(bytes)
 
         let opaque = OpaquePointer(bytes)
         halfwords = UnsafeMutablePointer<Halfword>(opaque)
@@ -47,5 +49,23 @@ final class RAM: Addressable {
 
     func writeWord(to address: Word, _ value: Word) {
         words[Int(address >> 2)] = value
+    }
+
+    // MARK: - Bulk access (DMA, diagnostics)
+
+    func copyIn(_ source: UnsafeRawBufferPointer, at address: Word) {
+        precondition(Int(address) + source.count <= Int(size), "RAM: DMA write out of bounds")
+        guard !source.isEmpty else { return }
+        UnsafeMutableRawPointer(bytes + Int(address)).copyMemory(from: source.baseAddress!, byteCount: source.count)
+    }
+
+    func copyOut(_ destination: UnsafeMutableRawBufferPointer, from address: Word) {
+        precondition(Int(address) + destination.count <= Int(size), "RAM: DMA read out of bounds")
+        guard !destination.isEmpty else { return }
+        destination.baseAddress!.copyMemory(from: bytes + Int(address), byteCount: destination.count)
+    }
+
+    var contents: UnsafeRawBufferPointer {
+        UnsafeRawBufferPointer(start: bytes, count: Int(size))
     }
 }

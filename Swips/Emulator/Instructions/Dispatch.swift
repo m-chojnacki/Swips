@@ -11,7 +11,8 @@
 extension EmulatorState {
     /// Decodes and executes one instruction word.
     /// Main instruction decoder - decodes the opcode fields and calls the appropriate handler.
-    mutating func executeInstruction(_ instruction: Word) throws {
+    @inline(__always)
+    mutating func executeInstruction(_ instruction: Word) throws(MIPSException) {
         switch instruction.op {
         // SPECIAL - secondary decode on funct field
         case 0b000000:
@@ -177,6 +178,7 @@ extension EmulatorState {
         case 0b100101: try op_lhu(instruction)
         case 0b001111: try op_lui(instruction)
         case 0b100011: try op_lw(instruction)
+        case 0b110000: try op_ll(instruction)
         case 0b110001: try op_lwc1(instruction)
         case 0b110101: try op_ldc1(instruction)
         case 0b100010: try op_lwl(instruction)
@@ -187,6 +189,7 @@ extension EmulatorState {
         case 0b001010: try op_slti(instruction)
         case 0b001011: try op_sltiu(instruction)
         case 0b101011: try op_sw(instruction)
+        case 0b111000: try op_sc(instruction)
         case 0b111001: try op_swc1(instruction)
         case 0b111101: try op_sdc1(instruction)
         case 0b101010: try op_swl(instruction)

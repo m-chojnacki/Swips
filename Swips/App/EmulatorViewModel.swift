@@ -27,15 +27,10 @@ final class EmulatorViewModel: ObservableObject {
 
         // Wire UART 0: terminal input → emulator RX buffer; emulator TX → terminal display.
         uart0IO.input = { [emulator] bytes in
-            emulator.cpu.bus.physical.uart0.insertIntoBuffer(bytes)
+            emulator.send { $0.bus.physical.uart0.insertIntoBuffer(bytes) }
         }
-        emulator.cpu.bus.physical.uart0.txReady = { [uart0IO] byte in
+        emulator.physical.uart0.txReady = { [uart0IO] byte in
             Task { @MainActor in uart0IO.output([byte]) }
-        }
-
-        // Mirror emulator framebuffer writes to the PixelBuffer shown on screen.
-        emulator.cpu.bus.physical.framebuffer.onWrite = { [weak self] _, _ in
-            self?.isDirty = true
         }
 
         emulator.scheduleEmulatorLoop()
@@ -47,27 +42,25 @@ final class EmulatorViewModel: ObservableObject {
         // MARK: - Input events support
 
         func onKeyboardPressed(_ keyCode: KeyMonitor.KeyCode) {
-            emulator.cpu.bus.physical.ps2Keyboard.pressed(keyCode)
+            emulator.send { $0.bus.physical.ps2Keyboard.pressed(keyCode) }
         }
 
         func onKeyboardReleased(_ keyCode: KeyMonitor.KeyCode) {
-            emulator.cpu.bus.physical.ps2Keyboard.depressed(keyCode)
+            emulator.send { $0.bus.physical.ps2Keyboard.depressed(keyCode) }
         }
 
         func onMouseMoved(x: SignedHalfword, y: SignedHalfword, left: Bool, right: Bool) {
-            emulator.cpu.bus.physical.ps2Mouse.move(x: x, y: y, left: left, right: right)
+            emulator.send { $0.bus.physical.ps2Mouse.move(x: x, y: y, left: left, right: right) }
         }
     #endif
 
     // MARK: - Framebuffer → PixelBuffer conversion
 
-    private var isDirty = true
-
     @MainActor private func redraw() {
-        guard isDirty else { return }
-        isDirty = false
+        let fb = emulator.physical.framebuffer
+        guard fb.isDirty else { return }
+        fb.isDirty = false
 
-        let fb = emulator.cpu.bus.physical.framebuffer
         for y in 0 ..< Int(fb.height) {
             for x in 0 ..< Int(fb.width) {
                 let base = y &* Int(fb.width) &+ x

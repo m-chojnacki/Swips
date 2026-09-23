@@ -9,23 +9,28 @@
 //
 
 extension EmulatorState {
-    mutating func op_lui(_ i: Word) throws {
+    @inline(__always)
+    mutating func op_lui(_ i: Word) throws(MIPSException) {
         registers[i.rt] = i.immediate << 16
     }
 
-    mutating func op_mfhi(_ i: Word) throws {
+    @inline(__always)
+    mutating func op_mfhi(_ i: Word) throws(MIPSException) {
         registers[i.rd] = registers.hi
     }
 
-    mutating func op_mflo(_ i: Word) throws {
+    @inline(__always)
+    mutating func op_mflo(_ i: Word) throws(MIPSException) {
         registers[i.rd] = registers.lo
     }
 
-    mutating func op_mthi(_ i: Word) throws {
+    @inline(__always)
+    mutating func op_mthi(_ i: Word) throws(MIPSException) {
         registers.hi = registers[i.rs]
     }
 
-    mutating func op_mtlo(_ i: Word) throws {
+    @inline(__always)
+    mutating func op_mtlo(_ i: Word) throws(MIPSException) {
         registers.lo = registers[i.rs]
     }
 }

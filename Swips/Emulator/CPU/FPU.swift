@@ -13,7 +13,7 @@ import Foundation
 // MARK: - FPU data registers
 
 struct FPURegisters {
-    private var storage = UnsafeMutablePointer<Word>.allocate(capacity: 32)
+    private var storage = UnsafeMutablePointer<Word>.zeroed(count: 32)
 
     /// Raw 32-bit word access.
     subscript(_ index: Word) -> Word {
@@ -53,7 +53,7 @@ struct FPURegisters {
 // MARK: - FPU control registers (FCSR)
 
 struct FPUControlRegisters {
-    private var storage = UnsafeMutablePointer<Word>.allocate(capacity: 32)
+    private var storage = UnsafeMutablePointer<Word>.zeroed(count: 32)
 
     subscript(_ index: Word) -> Word {
         get { storage[Int(index)] }

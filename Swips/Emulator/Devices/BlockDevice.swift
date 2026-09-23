@@ -35,24 +35,41 @@ final class BlockDevice: Addressable {
     private(set) var transferDone = false
 
     /// Weak reference to RAM - set by PhysicalBus after init.
-    var ram: Addressable!
+    var ram: RAM!
 
     // MARK: - Host file (macOS only)
 
     #if os(macOS)
-        private let fileHandle: FileHandle
+        private var fileHandle: FileHandle
         private let taskQueue = SerialQueue(name: Bundle.main.objectName("blockdevice"))
         let fileSize: UInt64
+
+        /// Copy-on-write pages layered over a read-only image; nil when writing through to the image.
+        private var overlay: [UInt64: [Byte]]?
+        private static let overlayPageSize: UInt64 = 4096
+
+        /// Complete transfers on the CPU thread, so a run is deterministic for a given instruction stream.
+        private var synchronous = false
 
         init() {
             fileHandle = FileHandle(forUpdatingAtPath: Bundle.main.runtimePath(of: "debian.img"))!
             fileSize = try! fileHandle.seekToEnd()
             assert(fileSize % 4096 == 0, "Disk image size must be a multiple of 4096 bytes")
         }
+
+        /// Stops all writes from reaching the host image and makes I/O synchronous.
+        /// Used by the profiler so repeated runs start from identical disk state and never dirty the image.
+        func enableSnapshotMode() {
+            fileHandle = FileHandle(forReadingAtPath: Bundle.main.runtimePath(of: "debian.img"))!
+            overlay = [:]
+            synchronous = true
+        }
     #else
         let fileSize: UInt64 = 4096 * 100
 
         init() {}
+
+        func enableSnapshotMode() {}
     #endif
 
     // MARK: - Addressable
@@ -96,39 +113,82 @@ final class BlockDevice: Addressable {
             let a = dmaAddress; let l = txLength
             let s = startSector; let o = sectorOffset
             #if os(macOS)
-                taskQueue.execute { [weak self] in
-                    self?.performTransfer(dmaAddress: a, length: l,
-                                          startSector: s, sectorOffset: o, write: write)
+                if synchronous {
+                    performTransfer(dmaAddress: a, length: l, startSector: s, sectorOffset: o, write: write)
+                } else {
+                    taskQueue.execute { [weak self] in
+                        self?.performTransfer(dmaAddress: a, length: l,
+                                              startSector: s, sectorOffset: o, write: write)
+                    }
                 }
             #endif
         default: break
         }
     }
 
-    // MARK: - Async I/O
+    // MARK: - Transfers
 
     #if os(macOS)
         private func performTransfer(dmaAddress: Word, length: Word,
                                      startSector: Word, sectorOffset: Word, write: Bool)
         {
             let byteOffset = (UInt64(startSector) << 9) &+ UInt64(sectorOffset)
+            var buffer = [Byte](repeating: 0, count: Int(length))
 
             if write {
-                var data = Data(count: Int(length))
-                for i in 0 ..< length {
-                    data[Int(i)] = ram.readByte(from: dmaAddress &+ i)
+                buffer.withUnsafeMutableBytes { ram.copyOut($0, from: dmaAddress) }
+                if overlay != nil {
+                    writeOverlay(buffer, at: byteOffset)
+                } else {
+                    try! fileHandle.seek(toOffset: byteOffset)
+                    fileHandle.write(Data(buffer))
                 }
-                try! fileHandle.seek(toOffset: byteOffset)
-                fileHandle.write(data)
             } else {
-                try! fileHandle.seek(toOffset: byteOffset)
-                let data = fileHandle.readData(ofLength: Int(length))
-                for i in 0 ..< length {
-                    ram.writeByte(to: dmaAddress &+ i, data[Int(i)])
+                if overlay != nil {
+                    readOverlay(into: &buffer, at: byteOffset)
+                } else {
+                    try! fileHandle.seek(toOffset: byteOffset)
+                    let data = fileHandle.readData(ofLength: Int(length))
+                    buffer.replaceSubrange(0 ..< data.count, with: data)
                 }
+                buffer.withUnsafeBytes { ram.copyIn($0, at: dmaAddress) }
             }
 
             transferDone = true
+        }
+
+        private func readImagePage(_ page: UInt64) -> [Byte] {
+            try! fileHandle.seek(toOffset: page * Self.overlayPageSize)
+            var bytes = [Byte](fileHandle.readData(ofLength: Int(Self.overlayPageSize)))
+            bytes += [Byte](repeating: 0, count: Int(Self.overlayPageSize) - bytes.count)
+            return bytes
+        }
+
+        private func readOverlay(into buffer: inout [Byte], at byteOffset: UInt64) {
+            var done = 0
+            while done < buffer.count {
+                let position = byteOffset + UInt64(done)
+                let page = position / Self.overlayPageSize
+                let inPage = Int(position % Self.overlayPageSize)
+                let n = min(buffer.count - done, Int(Self.overlayPageSize) - inPage)
+                let source = overlay![page] ?? readImagePage(page)
+                buffer.replaceSubrange(done ..< done + n, with: source[inPage ..< inPage + n])
+                done += n
+            }
+        }
+
+        private func writeOverlay(_ buffer: [Byte], at byteOffset: UInt64) {
+            var done = 0
+            while done < buffer.count {
+                let position = byteOffset + UInt64(done)
+                let page = position / Self.overlayPageSize
+                let inPage = Int(position % Self.overlayPageSize)
+                let n = min(buffer.count - done, Int(Self.overlayPageSize) - inPage)
+                var target = overlay![page] ?? readImagePage(page)
+                target.replaceSubrange(inPage ..< inPage + n, with: buffer[done ..< done + n])
+                overlay![page] = target
+                done += n
+            }
         }
     #endif
 }

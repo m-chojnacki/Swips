@@ -50,11 +50,30 @@ struct TLBEntry {
     }
 }
 
+// MARK: - Micro-TLB
+
+/// Direct-mapped memo of successful `tlbTranslate` lookups, indexed by VPN.
+/// A lookup's outcome only depends on cache entries with the same VPN, so a TLB write
+/// only needs to drop the slots of the VPNs it removes and inserts.
+struct MicroTLBEntry {
+    static let invalidTag: Word = .max
+
+    /// VPN << 6 | ASID of the memoized lookup.
+    var tag: Word = invalidTag
+    /// Physical frame address (PFN << 12).
+    var frame: Word = 0
+    var writable = false
+
+    static func tag(vpn: Word, asid: Word) -> Word {
+        vpn << 6 | asid
+    }
+}
+
 // MARK: - Address translation (extension on VirtualBus)
 
 extension VirtualBus {
     /// Translates a virtual page address using the TLB, throwing on a miss or protection fault.
-    func tlbTranslate(_ address: Word, write: Bool, isKUSeg: Bool) throws -> Word {
+    func tlbTranslate(_ address: Word, write: Bool, isKUSeg: Bool) throws(MIPSException) -> Word {
         let vpn = address >> 12
         let asid = (cp0.entryHi & 0b0000_0000_0000_0000_0000_1111_1100_0000) >> 6
         let key = vpn << 7 | asid << 1
@@ -76,6 +95,11 @@ extension VirtualBus {
                     entryHi: entry.entryHi,
                 )
             }
+            microTLB[Int(vpn & Self.microTLBMask)] = MicroTLBEntry(
+                tag: MicroTLBEntry.tag(vpn: vpn, asid: asid),
+                frame: entry.pfn << 12,
+                writable: entry.dirty,
+            )
             return (entry.pfn << 12) | (address & 0x0000_0FFF)
         }
 
@@ -100,5 +124,8 @@ extension VirtualBus {
         // Install the new entry.
         tlb[index] = newEntry
         tlbCache[newEntry.cacheKey.tlbCacheHash].append(newEntry)
+
+        microTLB[Int(oldEntry.vpn & Self.microTLBMask)].tag = MicroTLBEntry.invalidTag
+        microTLB[Int(newEntry.vpn & Self.microTLBMask)].tag = MicroTLBEntry.invalidTag
     }
 }

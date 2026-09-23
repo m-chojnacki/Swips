@@ -16,12 +16,7 @@ struct RegisterFile {
     /// LO register (multiply / divide result lower half).
     var lo: Word = 0
 
-    private var storage = UnsafeMutablePointer<Word>.allocate(capacity: 32)
-
-    init() {
-        // $zero is always 0 and must never be written.
-        storage[0] = 0
-    }
+    private var storage = UnsafeMutablePointer<Word>.zeroed(count: 32)
 
     subscript(_ index: Word) -> Word {
         get {

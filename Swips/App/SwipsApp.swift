@@ -10,7 +10,6 @@
 
 import SwiftUI
 
-@main
 struct SwipsApp: App {
     var body: some Scene {
         #if os(macOS)

@@ -100,10 +100,12 @@ extension Word {
         return "0x\(pad)\(s)"
     }
 
+    @inline(__always)
     func getBit(_ bit: Word) -> Bool {
         self >> bit & 1 != 0
     }
 
+    @inline(__always)
     func withBit(_ bit: Word, set value: Bool) -> Word {
         let mask: Word = 1 << bit
         let val: Word = (value ? 1 : 0) << bit

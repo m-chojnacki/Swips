@@ -128,20 +128,31 @@ struct CP0Registers {
 
     // MARK: - Stored registers
 
-    var sr = StatusRegister()
-    var cause: Word = 0
+    // Random (1) and Count (9) tick every step, so they live in CP0Clock.
+
+    static let resetCompare: Word = 0xFFFFFF
+
+    var sr = StatusRegister() {
+        didSet { checkInterrupts = true }
+    }
+
+    var cause: Word = 0 {
+        didSet { checkInterrupts = true }
+    }
+
+    /// Set whenever SR or Cause change; the run loop re-evaluates pending interrupts only then.
+    var checkInterrupts = true
+
     var epc: Word = 0
 
     var index: Word = 0
-    var random: Word = 63
     var config: Word = 0
     var entryHi: Word = 0
     var entryLo: Word = 0
     var context: Word = 0
     var badVAddr: Word = 0
 
-    var count: Word = 0
-    var compare: Word = 0xFFFFFF
+    var compare: Word = resetCompare
 
     // MARK: - Interrupt line
 
@@ -157,16 +168,15 @@ struct CP0Registers {
 
     // MARK: - Subscript (register read/write by number)
 
+    @inline(__always)
     subscript(_ reg: Word) -> Word {
         mutating get {
             switch reg {
             case 0: index
-            case 1: random << 8
             case 2: entryLo
             case 3: config
             case 4: (context & 0xFF80_0000) | ((badVAddr >> 12) << 2)
             case 8: badVAddr
-            case 9: count
             case 10: entryHi
             case 11: compare
             case 12: sr.value
@@ -179,12 +189,10 @@ struct CP0Registers {
         set {
             switch reg {
             case 0: index = newValue
-            case 1: random = newValue >> 8
             case 2: entryLo = newValue
             case 3: config = newValue
             case 4: context = newValue
             case 8: badVAddr = newValue
-            case 9: count = newValue
             case 10: entryHi = newValue
             case 11:
                 cause &= ~0x0000_8000 // clear timer interrupt pending
